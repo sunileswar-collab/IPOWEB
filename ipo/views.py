@@ -1,10 +1,10 @@
-from rest_framework import generics, filters
+from rest_framework import generics, filters, permissions
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import render
 from .models import IPO
 from .serializers import IPOSerializer
 
-class IPOListView(generics.ListAPIView):
+class IPOListView(generics.ListCreateAPIView):
     queryset = IPO.objects.all()
     serializer_class = IPOSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -12,10 +12,12 @@ class IPOListView(generics.ListAPIView):
     search_fields = ['company_name', 'status']
     ordering_fields = ['open_date', 'close_date', 'listing_date']
     ordering = ['-open_date']
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
-class IPODetailView(generics.RetrieveAPIView):
+class IPODetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = IPO.objects.all()
     serializer_class = IPOSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
 def home_view(request):
     upcoming_ipos = IPO.objects.filter(status='upcoming')
