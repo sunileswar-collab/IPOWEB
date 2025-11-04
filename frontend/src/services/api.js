@@ -10,10 +10,10 @@ const api = axios.create({
   },
 });
 
-// Add token to requests if available (only for authenticated endpoints)
+// Add token to requests if available (only for profile endpoint)
 api.interceptors.request.use((config) => {
-  // Only add token for auth endpoints, not for public IPO data
-  if (config.url && config.url.includes('/auth/')) {
+  // Only add token for profile endpoint, not for register/login
+  if (config.url && config.url.includes('/auth/profile')) {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
