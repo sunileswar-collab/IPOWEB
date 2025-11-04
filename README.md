@@ -21,7 +21,7 @@ To design and develop a **complete IPO Management System** with:
 | Component | Technology Used |
 |------------|----------------|
 | **Backend** | Python 3.12.3, Django 5.0.6, Django REST Framework 3.15.1 |
-| **Frontend** | HTML, CSS, JavaScript, Bootstrap 5 |
+| **Frontend** | HTML, CSS, JavaScript, Bootstrap 5 | React.js
 | **Database** | PostgreSQL |
 | **Storage** | Media files for logos and PDF uploads |
 | **Tools** | VS Code, Postman, Git, GitHub |
