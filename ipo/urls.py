@@ -8,4 +8,5 @@ urlpatterns = [
     path('auth/profile/', profile, name='profile'),
     path('ipo/', IPOListView.as_view(), name='ipo-list'),
     path('ipo/<int:pk>/', IPODetailView.as_view(), name='ipo-detail'),
+    path('ipos/', IPOListView.as_view(), name='ipo_list'),
 ]

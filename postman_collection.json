@@ -1,0 +1,415 @@
+{
+	"info": {
+		"name": "IPO Web API",
+		"description": "Complete API testing collection for IPO Web Application with JWT Authentication",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://127.0.0.1:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{access_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"testpass123\",\n  \"email\": \"test@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/register/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "register", ""]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('access_token', response.access);",
+									"    pm.collectionVariables.set('refresh_token', response.refresh);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Login User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"testpass123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "login", ""]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('access_token', response.access);",
+									"    pm.collectionVariables.set('refresh_token', response.refresh);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Get User Profile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/auth/profile/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "profile", ""]
+						}
+					}
+				},
+				{
+					"name": "Refresh Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/token/refresh/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "token", "refresh", ""]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('access_token', response.access);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "IPO Management",
+			"item": [
+				{
+					"name": "Get All IPOs",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/ipo/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", ""]
+						}
+					}
+				},
+				{
+					"name": "Get IPOs with Filters",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/ipo/?status=upcoming&search=tech",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", ""],
+							"query": [
+								{
+									"key": "status",
+									"value": "upcoming"
+								},
+								{
+									"key": "search",
+									"value": "tech"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get IPO by ID",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/ipo/1/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", "1", ""]
+						}
+					}
+				},
+				{
+					"name": "Create IPO (Auth Required)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"company_name\": \"Test Company Ltd\",\n  \"status\": \"upcoming\",\n  \"price_band_min\": 100,\n  \"price_band_max\": 120,\n  \"issue_size\": 500000000,\n  \"open_date\": \"2024-02-01\",\n  \"close_date\": \"2024-02-05\",\n  \"listing_date\": \"2024-02-10\",\n  \"lot_size\": 100,\n  \"description\": \"Test IPO for API testing\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/ipo/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", ""]
+						}
+					}
+				},
+				{
+					"name": "Update IPO (Auth Required)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"company_name\": \"Updated Company Ltd\",\n  \"status\": \"ongoing\",\n  \"price_band_min\": 110,\n  \"price_band_max\": 130,\n  \"issue_size\": 600000000,\n  \"open_date\": \"2024-02-01\",\n  \"close_date\": \"2024-02-05\",\n  \"listing_date\": \"2024-02-10\",\n  \"lot_size\": 100,\n  \"description\": \"Updated IPO description\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/ipo/1/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", "1", ""]
+						}
+					}
+				},
+				{
+					"name": "Delete IPO (Auth Required)",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/ipo/1/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", "1", ""]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Search & Filter Tests",
+			"item": [
+				{
+					"name": "Search by Company Name",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/ipo/?search=company",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", ""],
+							"query": [
+								{
+									"key": "search",
+									"value": "company"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Filter by Status",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/ipo/?status=upcoming",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", ""],
+							"query": [
+								{
+									"key": "status",
+									"value": "upcoming"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Sort by Open Date",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/ipo/?ordering=-open_date",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", ""],
+							"query": [
+								{
+									"key": "ordering",
+									"value": "-open_date"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Pagination Test",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/ipo/?page=1&page_size=5",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", ""],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "5"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Error Handling Tests",
+			"item": [
+				{
+					"name": "Unauthorized Access Test",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"company_name\": \"Unauthorized Test\",\n  \"status\": \"upcoming\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/ipo/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", ""]
+						}
+					}
+				},
+				{
+					"name": "Invalid Login Test",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"wronguser\",\n  \"password\": \"wrongpass\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "login", ""]
+						}
+					}
+				},
+				{
+					"name": "Non-existent IPO Test",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/ipo/999/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "ipo", "999", ""]
+						}
+					}
+				}
+			]
+		}
+	]
+}

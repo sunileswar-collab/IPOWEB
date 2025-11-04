@@ -1,49 +1,80 @@
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from decouple import config
+import getpass
 
 def setup_postgresql():
-    # Database connection parameters
-    db_name = config('DB_NAME')
-    db_user = config('DB_USER')
-    db_password = config('DB_PASSWORD')
-    db_host = config('DB_HOST', default='localhost')
-    db_port = config('DB_PORT', default='5432')
+    print("=== Bluestock IPO PostgreSQL Setup ===")
+    
+    # Database parameters
+    db_name = 'bluestock_ipo'
+    db_user = 'bluestock_user'
+    db_password = 'bluestock123'
+    
+    # Get admin password
+    admin_password = getpass.getpass("Enter PostgreSQL admin (postgres) password: ")
     
     try:
         # Connect to PostgreSQL server
-        admin_user = config('POSTGRES_ADMIN_USER', default='postgres')
-        admin_password = config('POSTGRES_ADMIN_PASSWORD', default=None)
-        
-        if not admin_password:
-            admin_password = input("Enter PostgreSQL admin password: ")
-            
         conn = psycopg2.connect(
-            host=db_host,
-            port=db_port,
-            user=admin_user,
+            host='localhost',
+            port='5432',
+            user='postgres',
             password=admin_password
         )
         conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         cursor = conn.cursor()
         
         # Create database
+        print(f"Creating database '{db_name}'...")
         cursor.execute(f"CREATE DATABASE {db_name};")
-        print(f"Database '{db_name}' created successfully!")
+        print(f"✓ Database '{db_name}' created successfully!")
         
         # Create user
+        print(f"Creating user '{db_user}'...")
         cursor.execute(f"CREATE USER {db_user} WITH PASSWORD '{db_password}';")
-        print(f"User '{db_user}' created successfully!")
+        print(f"✓ User '{db_user}' created successfully!")
         
         # Grant privileges
+        print("Granting privileges...")
         cursor.execute(f"GRANT ALL PRIVILEGES ON DATABASE {db_name} TO {db_user};")
-        print(f"Privileges granted to '{db_user}'!")
+        cursor.execute(f"ALTER USER {db_user} CREATEDB;")
+        
+        # Connect to the new database to grant schema permissions
+        cursor.close()
+        conn.close()
+        
+        # Connect to the new database
+        conn = psycopg2.connect(
+            host='localhost',
+            port='5432',
+            user='postgres',
+            password=admin_password,
+            database=db_name
+        )
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        cursor = conn.cursor()
+        
+        # Grant schema permissions
+        cursor.execute(f"GRANT ALL ON SCHEMA public TO {db_user};")
+        cursor.execute(f"GRANT CREATE ON SCHEMA public TO {db_user};")
+        cursor.execute(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {db_user};")
+        cursor.execute(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO {db_user};")
+        print(f"✓ Schema privileges granted to '{db_user}'!")
         
         cursor.close()
         conn.close()
         
+        print("\n🎉 PostgreSQL setup completed!")
+        print("\nNext steps:")
+        print("1. Run: python manage.py makemigrations")
+        print("2. Run: python manage.py migrate")
+        print("3. Run: python manage.py load_sample_data")
+        
     except psycopg2.Error as e:
-        print(f"Error: {e}")
+        if "already exists" in str(e):
+            print(f"⚠️  Database or user already exists: {e}")
+        else:
+            print(f"❌ Error: {e}")
         
 if __name__ == '__main__':
     setup_postgresql()
