@@ -259,8 +259,163 @@ config.setAllowCredentials(true);
 
 ---
 
-# PHASE 4 — (Coming Soon)
-> WebSocket Notifications, IPO Status Scheduler
+# PHASE 4 — WebSocket Notifications + IPO Status Scheduler
+
+## What Was Built
+- `WebSocketConfig` — STOMP over SockJS on `/ws`, in-memory broker on `/topic` and `/queue`
+- `NotificationService` — saves notification to DB + pushes real-time to user's personal queue
+- `IpoStatusScheduler` — `@Scheduled` runs every hour, auto-transitions `UPCOMING→ONGOING→LISTED` based on dates, notifies all watchers
+- `NotificationController` — REST endpoints for fetching, marking read, unread count
+- Updated `WatchlistRepository` — added `findByIpoId` for scheduler to find all watchers
+- Updated `SecurityConfig` — `/ws/**` permitted, `/api/notifications/**` authenticated
+- Updated `BackendApplication` — `@EnableScheduling` added
+
+---
+
+## Key Files Created/Modified
+| File | Purpose |
+|---|---|
+| `WebSocketConfig.java` | STOMP broker config, `/ws` endpoint |
+| `NotificationService.java` | Save to DB + push via WebSocket |
+| `IpoStatusScheduler.java` | Hourly cron, status transitions + notifications |
+| `NotificationController.java` | REST API for user notifications |
+
+---
+
+## API Endpoints Added
+
+### Notification Endpoints (Authenticated users)
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/notifications` | Get my notifications |
+| PUT | `/api/notifications/{id}/read` | Mark notification as read |
+| GET | `/api/notifications/unread-count` | Get unread count |
+
+### WebSocket
+| Endpoint | Description |
+|---|---|
+| `ws://localhost:8080/ws` | SockJS connection endpoint |
+| `/user/queue/notifications` | Personal notification queue per user |
+
+---
+
+## Concepts & Interview Questions
+
+### 1. WebSocket vs HTTP
+
+**What it is:** WebSocket is a persistent, full-duplex connection between client and server.
+HTTP is request-response — client must ask, server responds.
+WebSocket allows server to push data to client at any time.
+
+**Q: What is the difference between WebSocket and HTTP?**
+> HTTP is half-duplex — client sends request, server responds, connection closes.
+> WebSocket is full-duplex — connection stays open, both sides can send at any time.
+> WebSocket is ideal for real-time features: notifications, live prices, chat.
+
+**Q: What is STOMP?**
+> Simple Text Oriented Messaging Protocol — a messaging protocol that runs over WebSocket.
+> It adds concepts like destinations (topics/queues), subscriptions, and message headers.
+> Spring's WebSocket support is built around STOMP.
+
+**Q: What is SockJS?**
+> A JavaScript library that provides WebSocket-like API with fallback transports
+> (long-polling, XHR streaming) for browsers that don't support WebSocket.
+> Ensures real-time works even in restricted network environments.
+
+**Q: What is the difference between `/topic` and `/queue` in STOMP?**
+> `/topic` — broadcast to ALL subscribers (one-to-many, like a news feed)
+> `/queue` — sent to ONE specific user (one-to-one, like a personal inbox)
+> We use `/user/queue/notifications` so each user only gets their own notifications.
+
+---
+
+### 2. `@Scheduled` — Task Scheduling
+
+**What it is:** Runs a method automatically at fixed intervals or cron expressions.
+Requires `@EnableScheduling` on the application class.
+
+**Our scheduler:**
+```java
+@Scheduled(fixedRate = 3600000) // every hour in milliseconds
+public void updateIpoStatuses() { ... }
+```
+
+**Q: What is `@Scheduled` and what does `fixedRate` mean?**
+> `@Scheduled` marks a method to run automatically on a schedule.
+> `fixedRate` = run every N milliseconds regardless of how long the method takes.
+> `fixedDelay` = wait N milliseconds AFTER the previous execution finishes.
+> `cron` = use cron expression for complex schedules like "every day at 9am".
+
+**Q: What is the difference between `fixedRate` and `fixedDelay`?**
+> `fixedRate` — starts next execution N ms after the PREVIOUS START.
+> `fixedDelay` — starts next execution N ms after the PREVIOUS END.
+> If method takes 2s and rate is 1s, `fixedRate` will overlap; `fixedDelay` won't.
+
+**Q: What annotation is required to enable `@Scheduled`?**
+> `@EnableScheduling` on the main application class or any `@Configuration` class.
+> Without it, `@Scheduled` annotations are silently ignored — no error thrown.
+
+---
+
+### 3. `convertAndSendToUser` — Personal WebSocket Messages
+
+**What it is:** Sends a WebSocket message to a specific user's personal queue.
+
+**How it works:**
+```java
+messagingTemplate.convertAndSendToUser(
+    user.getEmail(),          // username (principal name)
+    "/queue/notifications",   // destination suffix
+    payload                   // message object
+);
+// Client subscribes to: /user/queue/notifications
+// Spring routes it to: /user/{email}/queue/notifications internally
+```
+
+**Q: How does `convertAndSendToUser` know which WebSocket session to send to?**
+> Spring maps the authenticated principal name (email in our case) to the
+> WebSocket session. When client connects and authenticates, Spring registers
+> the session under that principal. `convertAndSendToUser` looks up the session
+> by principal name and delivers the message.
+
+**Q: What is `SimpMessagingTemplate`?**
+> Spring's template class for sending messages to WebSocket destinations.
+> Similar to `JdbcTemplate` for DB or `RestTemplate` for HTTP — it abstracts
+> the low-level WebSocket/STOMP protocol details.
+
+---
+
+### 4. Status Transition Logic
+
+**Business rules:**
+```
+UPCOMING → ONGOING  when today >= openDate
+ONGOING  → LISTED   when today > closeDate
+```
+
+**Q: Why use a scheduler instead of updating status manually?**
+> Manual updates require admin action and can be forgotten.
+> A scheduler ensures status is always accurate based on real dates.
+> This is the "single source of truth" principle — dates drive status, not humans.
+
+**Q: What is `@Transactional` on the scheduler method?**
+> The scheduler updates multiple IPOs in one run.
+> `@Transactional` ensures if any update fails, all changes in that run roll back.
+> Prevents partial state where some IPOs are updated and others aren't.
+
+---
+
+## Phase 4 Summary (Say in interview)
+
+> "I implemented real-time notifications using WebSocket with STOMP protocol.
+> When an IPO status changes, all users who watchlisted that IPO receive
+> an instant push notification to their personal queue.
+> Status transitions are automated by a scheduled job that runs every hour —
+> it checks IPO dates and moves them from UPCOMING to ONGOING to LISTED automatically.
+> Notifications are also persisted in the database so users can view history
+> and mark them as read via REST endpoints."
+
+---
 
 ---
 

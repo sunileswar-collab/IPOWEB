@@ -697,3 +697,10 @@ A BCrypt hash can be used in offline brute force attacks without rate limiting.
 | 10 | N+1 DB queries per request | No caching in UserDetailsService | @Transactional(readOnly=true) + SecurityContextHolder |
 | 11 | 405 Method Not Allowed | Wrong HTTP method in Postman | Use POST not GET for watchlist |
 | 12 | Password hash in response | Entity serialized directly | @JsonIgnoreProperties on relationship |
+
+---
+
+# PHASE 4 ERRORS
+
+> No new errors encountered in Phase 4 — BUILD SUCCESS on first compile.
+> Phase 4 benefited from lessons learned in Phases 1-3 (manual constructors from the start, no Lombok constructor annotations).
