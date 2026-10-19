@@ -18,6 +18,6 @@ public interface IpoRepository extends JpaRepository<Ipo, Long> {
     @Query("SELECT i.riskScore, COUNT(i) FROM Ipo i WHERE i.riskScore IS NOT NULL GROUP BY i.riskScore")
     List<Object[]> countByRiskScore();
 
-    @Query("SELECT i FROM Ipo i WHERE i.status = 'LISTED' AND i.listingGain IS NOT NULL ORDER BY i.listingGain DESC LIMIT 5")
+    @Query("SELECT i FROM Ipo i WHERE i.status = 'LISTED' AND i.listingPrice IS NOT NULL AND i.ipoPrice IS NOT NULL ORDER BY (i.listingPrice - i.ipoPrice) DESC LIMIT 5")
     List<Ipo> findTopPerformersByListingGain();
 }

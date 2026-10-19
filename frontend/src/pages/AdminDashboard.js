@@ -10,7 +10,6 @@ import api from '../services/api';
 
 const STATUS_COLORS = { UPCOMING: '#0d6efd', ONGOING: '#ffc107', LISTED: '#198754' };
 const RISK_COLORS   = { LOW: '#198754', MEDIUM: '#ffc107', HIGH: '#dc3545' };
-const ROLE_COLORS   = { ADMIN: 'danger', ANALYST: 'warning', VIEWER: 'info' };
 
 const StatCard = ({ label, value, color, icon }) => (
   <Card className="h-100 border-0 shadow-sm">
@@ -34,8 +33,6 @@ const AdminDashboard = () => {
   const [error, setError]   = useState('');
   const [actionMsg, setActionMsg] = useState('');
 
-  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />;
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -53,6 +50,9 @@ const AdminDashboard = () => {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Guard AFTER all hooks
+  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />;
 
   const flash = (msg) => { setActionMsg(msg); setTimeout(() => setActionMsg(''), 3000); };
 

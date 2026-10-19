@@ -972,7 +972,132 @@ npm approve-scripts --allow-scripts-pending
 
 ---
 
-# PHASE 6 ERRORS
+# ERROR 19 — React Hooks Called After Conditional Return (Rules of Hooks Violation)
+
+## Error Message
+```
+React Hook "useCallback" cannot be called after a conditional return.
+React Hook "useEffect" cannot be called after a conditional return.
+Error: Rendered more hooks than during the previous render.
+```
+
+## When It Happened
+Phase 6 — Integrity check on AdminDashboard.js
+
+## Why It Happened
+The original code had:
+```jsx
+const AdminDashboard = () => {
+  const { user } = useAuth();       // hook 1
+  const [stats, setStats] = ...;    // hook 2-6
+
+  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />;  // ← early return
+
+  const fetchData = useCallback(...);  // hook 7 — AFTER conditional return ❌
+  useEffect(() => { fetchData(); });   // hook 8 — AFTER conditional return ❌
+};
+```
+React's Rules of Hooks require hooks to be called in the same order on every render.
+If the component returns early, hooks after the return are skipped — React loses track
+of hook order and throws an error.
+
+## Resolution
+Moved ALL hooks before any conditional return:
+```jsx
+const AdminDashboard = () => {
+  const { user } = useAuth();
+  const [stats, setStats] = ...;
+
+  const fetchData = useCallback(...);  // ✅ hook before return
+  useEffect(() => { fetchData(); });   // ✅ hook before return
+
+  // Guard AFTER all hooks
+  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />;
+};
+```
+
+## Interview Questions & Answers
+
+**Q: What are the Rules of Hooks in React?**
+> 1. Only call hooks at the top level — never inside loops, conditions, or nested functions.
+> 2. Only call hooks from React function components or custom hooks.
+> React relies on hook call ORDER to associate state with the correct hook.
+> If order changes between renders (due to conditional), React gets confused.
+
+**Q: Why does React require hooks to be called in the same order every render?**
+> React stores hook state in an array indexed by call order.
+> Hook 1 → index 0, Hook 2 → index 1, etc.
+> If a conditional skips hook 3, hooks 4+ shift down by one index.
+> React reads wrong state for every hook after the skipped one.
+
+**Q: How do you conditionally use a hook's result without violating the rules?**
+> Always call the hook, but conditionally USE its result:
+> ```jsx
+> const data = useFetch(url);  // always called
+> if (!isLoggedIn) return null; // conditional return AFTER hook
+> return <div>{data}</div>;
+> ```
+
+---
+
+# ERROR 20 — JPQL Query on Computed Java Method (Not a DB Column)
+
+## Error Message
+```
+org.hibernate.query.SemanticException: Could not resolve attribute 'listingGain'
+from 'com.ipolisting.backend.model.Ipo'
+```
+
+## When It Happened
+Phase 6 — Integrity check on IpoRepository.java top performers query
+
+## Why It Happened
+`listingGain` is a computed Java method on the `Ipo` entity:
+```java
+public Double getListingGain() {
+    if (ipoPrice != null && listingPrice != null && ipoPrice > 0)
+        return ((listingPrice - ipoPrice) / ipoPrice) * 100;
+    return null;
+}
+```
+It is NOT a database column — there is no `listing_gain` column in the `ipos` table.
+JPQL translates field names to SQL columns. `i.listingGain` has no corresponding column
+so Hibernate throws `SemanticException: Could not resolve attribute`.
+
+## Resolution
+Replaced the computed field reference with the actual DB columns:
+```java
+// Before (broken)
+@Query("SELECT i FROM Ipo i WHERE i.status = 'LISTED' AND i.listingGain IS NOT NULL ORDER BY i.listingGain DESC LIMIT 5")
+
+// After (correct)
+@Query("SELECT i FROM Ipo i WHERE i.status = 'LISTED' AND i.listingPrice IS NOT NULL AND i.ipoPrice IS NOT NULL ORDER BY (i.listingPrice - i.ipoPrice) DESC LIMIT 5")
+```
+The computation happens in JPQL arithmetic — same result, uses real columns.
+
+## Interview Questions & Answers
+
+**Q: What is the difference between a JPA entity field and a computed method?**
+> Entity field = mapped to a DB column with `@Column` — Hibernate reads/writes it.
+> Computed method = plain Java method that calculates a value at runtime from other fields.
+> JPQL can only reference entity fields (DB columns), not computed methods.
+
+**Q: How do you persist a computed value in JPA if you need to query it?**
+> Option 1: Add it as a real `@Column` and update it on save.
+> Option 2: Use `@Formula` (Hibernate-specific) — maps a SQL expression to a field:
+> ```java
+> @Formula("(listing_price - ipo_price) / ipo_price * 100")
+> private Double listingGain;
+> ```
+> Option 3: Compute in JPQL arithmetic as we did — no extra column needed.
+
+**Q: What is `@Formula` in Hibernate?**
+> A Hibernate annotation that maps a read-only field to a SQL expression.
+> Hibernate includes the expression in SELECT queries automatically.
+> The field is never written to DB — only computed on read.
+> Useful for derived values like percentage gains, age from birthdate, etc.
+
+---
 
 ---
 
@@ -1090,3 +1215,156 @@ const pieData = Object.entries(ipoStats).map(([name, value]) => ({ name, value }
 | 16 | npm install scripts warning | 5 | npm security feature for install scripts | Warning only — no action needed |
 | 17 | JPQL LIMIT not supported | 6 | LIMIT is SQL syntax not JPQL | Use nativeQuery=true or Pageable |
 | 18 | Admin charts blank | 6 | Empty DB / no null guards in frontend | Add empty state checks + seed data |
+| 19 | React hooks after conditional return | 6 | Violated Rules of Hooks | Move all hooks before any conditional return |
+| 20 | JPQL query on computed field | 6 | listingGain is Java method not DB column | Query on listingPrice/ipoPrice columns instead |
+
+---
+
+# PHASE 7 ERRORS
+
+---
+
+# ERROR 21 — Filter Registration Causes Duplicate Execution
+
+## Error Message
+```
+RateLimitFilter executed TWICE per request
+(once by Spring Security filter chain, once by Spring's default servlet filter registration)
+```
+
+## When It Happened
+Phase 7 — After registering RateLimitFilter and SecurityHeadersFilter
+
+## Why It Happened
+When a `@Component` filter is also registered via `addFilterBefore()` in SecurityConfig,
+Spring Boot registers it TWICE:
+1. Once automatically as a servlet filter (because of `@Component`)
+2. Once inside the Spring Security filter chain (because of `addFilterBefore()`)
+
+Result: every request goes through the rate limiter twice — limit is consumed at double speed.
+
+## Resolution
+Two options:
+
+Option 1 — Remove `@Component` and register only via SecurityConfig (cleanest):
+```java
+// Remove @Component from RateLimitFilter and SecurityHeadersFilter
+// Register only in SecurityConfig via addFilterBefore()
+```
+
+Option 2 — Keep `@Component` but exclude from auto-registration:
+```java
+@Bean
+public FilterRegistrationBean<RateLimitFilter> rateLimitRegistration(RateLimitFilter filter) {
+    FilterRegistrationBean<RateLimitFilter> bean = new FilterRegistrationBean<>(filter);
+    bean.setEnabled(false); // disable auto-registration
+    return bean;
+}
+```
+
+In our project both filters use `@Component` and are registered via `addFilterBefore()` —
+monitor for double execution and apply Option 2 if needed.
+
+## Interview Questions & Answers
+
+**Q: What is the difference between a servlet filter and a Spring Security filter?**
+> Servlet filter = registered in the servlet container, runs for ALL requests.
+> Spring Security filter = runs inside Spring Security's filter chain, has access
+> to SecurityContext. Spring Security's chain is itself a single servlet filter.
+> A `@Component` filter is auto-registered as a servlet filter by Spring Boot.
+
+**Q: How do you prevent a Spring filter from being registered twice?**
+> Use `FilterRegistrationBean` with `setEnabled(false)` to disable auto-registration
+> while still allowing manual registration inside the Security filter chain.
+> Or remove `@Component` and inject the filter as a `@Bean` in a config class.
+
+**Q: What is `OncePerRequestFilter` and does it prevent double execution?**
+> `OncePerRequestFilter` guarantees the filter runs once per REQUEST, not once per
+> filter registration. If registered twice (servlet + security chain), it still
+> runs twice — once in each chain. It only prevents re-execution within the same chain
+> when requests are forwarded internally.
+
+---
+
+# ERROR 22 — AccessDeniedException Returns 500 Instead of 403
+
+## Error Message
+```
+HTTP 500 Internal Server Error
+{"timestamp": "...", "status": 500, "error": "Internal Server Error"}
+(when VIEWER role user calls POST /api/ipos)
+```
+
+## When It Happened
+Phase 7 — Testing role-based access with a VIEWER token
+
+## Why It Happened
+`AccessDeniedException` is thrown by Spring Security when a user lacks the required role.
+The `GlobalExceptionHandler` had no handler for `AccessDeniedException` —
+it fell through to the generic `RuntimeException` handler which returned 400,
+or worse, Spring's default error handler returned 500.
+
+`AccessDeniedException` extends `RuntimeException` but Spring Security handles it
+specially — it must be caught explicitly before the generic `RuntimeException` handler.
+
+## Resolution
+Added explicit handler in `GlobalExceptionHandler`:
+```java
+@ExceptionHandler(AccessDeniedException.class)
+public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException ex) {
+    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(Map.of("error", "Access denied"));
+}
+```
+Must be declared BEFORE the `RuntimeException` handler — Spring picks the most specific match.
+
+## Interview Questions & Answers
+
+**Q: Why must `AccessDeniedException` handler be declared before `RuntimeException` handler?**
+> `AccessDeniedException` extends `RuntimeException`.
+> Spring's `@ExceptionHandler` picks the most specific matching handler.
+> If `RuntimeException` is declared first and Spring evaluates top-to-bottom,
+> it may match `RuntimeException` before reaching `AccessDeniedException`.
+> Always declare specific exception handlers before generic ones.
+
+**Q: What is the difference between `AuthenticationException` and `AccessDeniedException`?**
+> `AuthenticationException` = user is not authenticated (no token, invalid token) → 401.
+> `AccessDeniedException` = user is authenticated but lacks permission → 403.
+> Spring Security throws `AuthenticationException` before the filter chain completes.
+> `AccessDeniedException` is thrown after authentication, during authorization check.
+
+**Q: What is Spring Security's `ExceptionTranslationFilter`?**
+> A filter that catches `AuthenticationException` and `AccessDeniedException`
+> and translates them into HTTP responses (401/403).
+> It calls `AuthenticationEntryPoint` for 401 and `AccessDeniedHandler` for 403.
+> Our `GlobalExceptionHandler` handles these at the controller level —
+> `ExceptionTranslationFilter` handles them at the filter level.
+
+---
+
+## Key Lessons Summary (Final)
+
+| # | Error | Phase | Root Cause | Resolution |
+|---|---|---|---|---|
+| 1 | DaoAuthenticationProvider constructor | 2 | Spring Security 7.x API change | Pass UserDetailsService to constructor |
+| 2 | Flyway silent failure | 2 | Missing spring-boot-starter-flyway | Add both flyway starter and flyway-mysql |
+| 3 | Schema validation crash | 2 | ddl-auto=validate on empty DB | Change to ddl-auto=none |
+| 4 | MySQL connection refused | 2 | MySQL service stopped | net start MySQL80 as Administrator |
+| 5 | MySQL access denied | 2 | Wrong password in properties | Confirm password, update properties |
+| 6 | PowerShell -- flag error | 2 | PowerShell parses -- as operator | Use CMD instead of PowerShell |
+| 7 | 403 on valid token | 3 | Silent JWT exception in filter | Add try-catch in JwtFilter |
+| 8 | VerifyError in SecurityConfig | 3 | Lombok incompatible with Java 25 | Manual constructor in SecurityConfig |
+| 9 | VerifyError in all classes | 3 | Lombok incompatible with Java 25 | Manual constructors in all classes |
+| 10 | N+1 DB queries per request | 3 | No caching in UserDetailsService | @Transactional(readOnly=true) |
+| 11 | 405 Method Not Allowed | 3 | Wrong HTTP method in Postman | Use POST not GET for watchlist |
+| 12 | Password hash in response | 3 | Entity serialized directly | @JsonIgnoreProperties on relationship |
+| 13 | API 404 after migration | 5 | Wrong port and URL style | Fix proxy to 8080, remove trailing slashes |
+| 14 | IPO fields all undefined | 5 | snake_case vs camelCase mismatch | Update all field names to camelCase |
+| 15 | Status filter returning all IPOs | 5 | lowercase vs UPPERCASE enum | Use UPPERCASE status values in React |
+| 16 | npm install scripts warning | 5 | npm security feature for install scripts | Warning only — no action needed |
+| 17 | JPQL LIMIT not supported | 6 | LIMIT is SQL syntax not JPQL | Use nativeQuery=true or Pageable |
+| 18 | Admin charts blank | 6 | Empty DB / no null guards in frontend | Add empty state checks + seed data |
+| 19 | React hooks after conditional return | 6 | Violated Rules of Hooks | Move all hooks before any conditional return |
+| 20 | JPQL query on computed field | 6 | listingGain is Java method not DB column | Query on listingPrice/ipoPrice columns instead |
+| 21 | Filter registered twice | 7 | @Component + addFilterBefore = double registration | Use FilterRegistrationBean to disable auto-registration |
+| 22 | AccessDeniedException returns 500 | 7 | No specific handler in GlobalExceptionHandler | Add @ExceptionHandler(AccessDeniedException.class) |

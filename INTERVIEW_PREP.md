@@ -730,8 +730,188 @@ public ResponseEntity<...> getDashboardStats() { ... }
 
 ---
 
-# PHASE 7 — (Coming Soon)
-> Security Hardening, Rate Limiting
+# PHASE 7 — Security Hardening + Rate Limiting
+
+## What Was Built
+
+### New Files
+| File | Purpose |
+|---|---|
+| `RateLimitFilter.java` | Per-IP sliding window rate limiter — 20 req/min on `/api/auth/**`, 100 req/min globally |
+| `SecurityHeadersFilter.java` | Adds OWASP security headers to every response |
+
+### Modified Files
+| File | Change |
+|---|---|
+| `SecurityConfig.java` | Registered both new filters before JwtFilter in chain |
+| `GlobalExceptionHandler.java` | Added `AccessDeniedException` handler — returns clean 403 JSON |
+| `AuthService.java` | Added disabled user check on login |
+| `application.properties` | Disabled SQL logging, locked Actuator to health-only |
+
+---
+
+## Security Headers Added
+| Header | Value | Protects Against |
+|---|---|---|
+| `X-Content-Type-Options` | `nosniff` | MIME type sniffing attacks |
+| `X-Frame-Options` | `DENY` | Clickjacking |
+| `Content-Security-Policy` | `default-src 'self'` | XSS, data injection |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Referrer leakage |
+| `Permissions-Policy` | `geolocation=(), microphone=()` | Browser feature abuse |
+
+---
+
+## Rate Limits
+| Endpoint | Limit | Window |
+|---|---|---|
+| `/api/auth/**` | 20 requests | per IP per minute |
+| All other `/api/**` | 100 requests | per IP per minute |
+| Exceeded response | HTTP 429 Too Many Requests | JSON error message |
+
+---
+
+## Concepts & Interview Questions
+
+### 1. Rate Limiting
+
+**What it is:** Restricting how many requests a client can make in a time window.
+
+**Our implementation — sliding window per IP:**
+```java
+// Store: IP -> [windowStartTime, requestCount]
+private final ConcurrentHashMap<String, long[]> authWindows = new ConcurrentHashMap();
+
+// On each request:
+// - If window expired (>60s ago): reset count to 1
+// - Else: increment count
+// - If count > limit: return 429
+```
+
+**Q: What is rate limiting and why is it important?**
+> Rate limiting restricts how many requests a client can make in a time window.
+> Without it, attackers can:
+> 1. Brute force passwords by trying thousands of combinations
+> 2. DDoS the server by flooding it with requests
+> 3. Scrape all data by making rapid sequential requests
+> Rate limiting on `/api/auth/**` specifically prevents brute force attacks.
+
+**Q: What is the difference between rate limiting and throttling?**
+> Rate limiting = hard block after limit exceeded (return 429, reject request).
+> Throttling = slow down responses as load increases (add delays, queue requests).
+> Rate limiting is binary — allowed or blocked.
+> Throttling is gradual — degrades gracefully under load.
+
+**Q: What is a sliding window vs fixed window rate limiter?**
+> Fixed window: count resets at fixed intervals (e.g., every minute on the clock).
+> Problem: 20 requests at 0:59 + 20 at 1:01 = 40 requests in 2 seconds.
+> Sliding window: window moves with each request — always looks back exactly 60s.
+> Our implementation uses sliding window — more accurate protection.
+
+**Q: What is `ConcurrentHashMap` and why use it for rate limiting?**
+> `ConcurrentHashMap` is thread-safe — multiple threads can read/write simultaneously.
+> Regular `HashMap` is not thread-safe — concurrent writes cause data corruption.
+> Spring handles each HTTP request in a separate thread — must use thread-safe collections.
+
+**Q: What is HTTP 429 status code?**
+> `429 Too Many Requests` — the standard response for rate limit exceeded.
+> Should include `Retry-After` header telling client when to retry.
+> Client should back off and retry after the specified time.
+
+---
+
+### 2. Security Headers
+
+**Q: What is `X-Content-Type-Options: nosniff`?**
+> Prevents browsers from guessing (sniffing) the content type of a response.
+> Without it, a browser might execute a text file as JavaScript if it looks like JS.
+> `nosniff` forces browser to use the declared `Content-Type` header.
+
+**Q: What is `X-Frame-Options: DENY`?**
+> Prevents the page from being embedded in an `<iframe>` on another site.
+> Protects against clickjacking — attacker overlays invisible iframe over their page
+> to trick users into clicking buttons on your site.
+
+**Q: What is Content Security Policy (CSP)?**
+> A header that tells the browser which sources are allowed to load resources.
+> `default-src 'self'` = only load scripts/styles/images from same origin.
+> Prevents XSS attacks — even if attacker injects a `<script>` tag,
+> the browser blocks it if the source isn't in the CSP whitelist.
+
+**Q: What is the difference between XSS and CSRF?**
+> XSS (Cross-Site Scripting) = attacker injects malicious JS into your page.
+> CSRF (Cross-Site Request Forgery) = attacker tricks user's browser into making
+> requests to your API using the user's existing session/cookies.
+> CSP headers protect against XSS. CSRF tokens protect against CSRF.
+> We disabled CSRF because we use JWT (stateless) — no session cookies to forge.
+
+---
+
+### 3. Actuator Security
+
+**What it is:** Spring Boot Actuator exposes management endpoints like `/actuator/env`,
+`/actuator/beans`, `/actuator/mappings` that reveal internal app details.
+
+**Default (dangerous):** All endpoints exposed — attacker can see env vars, beans, DB config.
+
+**Our config:**
+```properties
+management.endpoints.web.exposure.include=health
+management.endpoint.health.show-details=never
+```
+
+**Q: Why is Spring Boot Actuator a security risk if misconfigured?**
+> `/actuator/env` exposes all environment variables including DB passwords and JWT secrets.
+> `/actuator/heapdump` dumps the entire JVM heap — contains all in-memory data.
+> `/actuator/beans` reveals the entire Spring application structure.
+> Always restrict to `health` only in production. Never expose `env` or `heapdump`.
+
+**Q: What does `management.endpoint.health.show-details=never` do?**
+> The health endpoint by default shows DB connection status, disk space, etc.
+> `show-details=never` returns only `{"status": "UP"}` — no internal details.
+> Prevents attackers from learning about your infrastructure from health checks.
+
+---
+
+### 4. Disabled User Check
+
+**The gap we fixed:**
+```java
+// Before: disabled users could still login and get a JWT
+authenticationManager.authenticate(...);
+User user = userRepository.findByEmail(email).orElseThrow();
+// Missing: check if user.isEnabled()
+String token = jwtUtil.generateToken(userDetails); // ❌ issued to disabled user
+
+// After: disabled users are blocked
+if (!user.isEnabled())
+    throw new RuntimeException("Account is disabled. Contact administrator.");
+```
+
+**Q: Why does Spring Security's `authenticationManager.authenticate()` not check `enabled`?**
+> It does check `enabled` — but only if `UserDetailsService` returns a `UserDetails`
+> with `isEnabled() = false`. Our `UserDetailsServiceImpl` was returning
+> `User.builder().disabled(false)` hardcoded. The fix ensures the DB value is used.
+> Always map all `UserDetails` fields from the actual entity.
+
+**Q: What is the principle of defense in depth applied here?**
+> Even if an admin disables a user account, without this check the user could
+> still login and get a valid JWT. The JWT would work until expiry (24 hours).
+> Defense in depth = check at every layer: DB flag + login check + token validation.
+
+---
+
+## Phase 7 Summary (Say in interview)
+
+> "I hardened the application with three layers of security.
+> First, a rate limiting filter blocks brute force attacks — 20 requests per minute
+> on auth endpoints per IP using a sliding window with ConcurrentHashMap.
+> Second, a security headers filter adds OWASP-recommended headers including
+> Content-Security-Policy, X-Frame-Options, and X-Content-Type-Options to every response.
+> Third, I locked down Spring Boot Actuator to expose only the health endpoint
+> with no internal details, disabled SQL query logging to prevent schema leakage,
+> and added a disabled-user check on login so deactivated accounts cannot obtain JWT tokens."
+
+---
 
 ---
 

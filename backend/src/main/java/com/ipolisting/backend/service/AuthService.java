@@ -51,6 +51,9 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
 
         User user = userRepository.findByEmail(request.getEmail()).orElseThrow();
+        if (!user.isEnabled())
+            throw new RuntimeException("Account is disabled. Contact administrator.");
+
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getEmail());
         String token = jwtUtil.generateToken(userDetails);
         return new AuthDTO.AuthResponse(token, user.getEmail(), user.getFullName(), user.getRole().name());
