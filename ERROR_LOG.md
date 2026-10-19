@@ -704,3 +704,268 @@ A BCrypt hash can be used in offline brute force attacks without rate limiting.
 
 > No new errors encountered in Phase 4 — BUILD SUCCESS on first compile.
 > Phase 4 benefited from lessons learned in Phases 1-3 (manual constructors from the start, no Lombok constructor annotations).
+
+---
+
+# PHASE 5 ERRORS
+
+---
+
+# ERROR 13 — API calls returning 404 (wrong base URL after migration)
+
+## Error Message
+```
+GET http://localhost:3000/api/ipo/ 404 Not Found
+```
+
+## When It Happened
+Phase 5 — First time running React app after migrating from Django to Spring Boot
+
+## Why It Happened
+The old `api.js` had:
+```js
+const API_BASE_URL = 'http://127.0.0.1:8000/api';
+```
+And `package.json` proxy was:
+```json
+"proxy": "http://127.0.0.1:8000"
+```
+Both still pointed to the old Django server on port 8000.
+Spring Boot runs on port 8080 — so every API call hit nothing.
+
+Also the old endpoints used Django URL style with trailing slashes:
+`/api/ipo/` → Spring Boot uses `/api/ipos` (no trailing slash, plural)
+
+## Resolution
+1. Updated `package.json` proxy:
+```json
+"proxy": "http://localhost:8080"
+```
+2. Rewrote `api.js` with relative base URL `/api` (proxy handles the port):
+```js
+const api = axios.create({ baseURL: '/api' });
+```
+3. Updated all endpoint paths to Spring Boot style:
+```js
+// Old Django
+api.get('/ipo/')         → api.get('/ipos')
+api.get('/ipo/${id}/')   → api.get('/ipos/${id}')
+api.post('/auth/login/') → api.post('/auth/login')
+```
+
+## Interview Questions & Answers
+
+**Q: What is the React development proxy and why use it?**
+> The `proxy` field in `package.json` tells the React dev server to forward
+> API requests to another server. Without it, requests to `/api/...` would
+> go to `localhost:3000` (React) instead of `localhost:8080` (Spring Boot).
+> Also avoids CORS issues in development — browser sees same origin.
+
+**Q: What is the difference between absolute and relative base URLs in Axios?**
+> Absolute: `baseURL: 'http://localhost:8080/api'` — hardcodes the server address.
+> Relative: `baseURL: '/api'` — uses the current origin, works with proxy.
+> Relative is better for development — no need to change URL when deploying.
+
+**Q: Why do Django REST Framework URLs have trailing slashes but Spring Boot doesn't?**
+> Django enforces trailing slashes by default (`APPEND_SLASH = True`).
+> Spring Boot has no such convention — URLs are exactly as mapped in `@GetMapping`.
+> This is a common gotcha when migrating between the two frameworks.
+
+---
+
+# ERROR 14 — IPO data not displaying (snake_case vs camelCase field mismatch)
+
+## Error Message
+```
+No visible error — but all IPO fields showed "N/A" or were blank.
+company_name: undefined
+open_date: undefined
+```
+
+## When It Happened
+Phase 5 — After fixing the 404, IPO list loaded but all cards were empty
+
+## Why It Happened
+Django REST Framework serializes fields in `snake_case` by default:
+```json
+{ "company_name": "Zomato", "open_date": "2024-01-15", "price_band": "72-76" }
+```
+Spring Boot with Jackson serializes Java camelCase fields as camelCase:
+```json
+{ "companyName": "Zomato", "openDate": "2024-01-15", "priceBand": "72-76" }
+```
+The old React components used `ipo.company_name`, `ipo.open_date` etc.
+With Spring Boot responses, these were all `undefined`.
+
+## Resolution
+Updated every component to use camelCase field names:
+```js
+// Old (Django)
+ipo.company_name  → ipo.companyName
+ipo.open_date     → ipo.openDate
+ipo.close_date    → ipo.closeDate
+ipo.price_band    → ipo.priceBand
+ipo.issue_size    → ipo.issueSize
+ipo.logo          → ipo.logoUrl
+ipo.rhp_pdf       → ipo.rhpPdfUrl
+ipo.drhp_pdf      → ipo.drhpPdfUrl
+ipo.listing_gain  → ipo.listingGain
+ipo.current_return → ipo.currentReturn
+```
+
+## Interview Questions & Answers
+
+**Q: How does Jackson determine JSON field names from Java class fields?**
+> By default, Jackson uses the Java field name as-is.
+> Java convention is camelCase (`companyName`) → JSON output is camelCase.
+> You can override with `@JsonProperty("company_name")` to force snake_case.
+> Or configure globally: `spring.jackson.property-naming-strategy=SNAKE_CASE`.
+
+**Q: How would you make Spring Boot return snake_case JSON like Django?**
+> Add to `application.properties`:
+> ```properties
+> spring.jackson.property-naming-strategy=SNAKE_CASE
+> ```
+> Or annotate the class: `@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)`
+> We chose to update the frontend instead — keeping Spring Boot conventions.
+
+**Q: What debugging technique helps find field name mismatches?**
+> Open browser DevTools → Network tab → click the API request → Response tab.
+> Compare the actual JSON field names with what the component expects.
+> `console.log(ipo)` in the component also shows the actual object structure.
+
+---
+
+# ERROR 15 — Status filter broken (lowercase vs UPPERCASE enum mismatch)
+
+## Error Message
+```
+GET /api/ipos?status=upcoming → returned all IPOs instead of filtering
+(no error, just wrong results)
+```
+
+## When It Happened
+Phase 5 — Testing status filter buttons on IPOListPage
+
+## Why It Happened
+Old Django code used lowercase status values: `upcoming`, `ongoing`, `listed`
+Spring Boot enums are uppercase: `UPCOMING`, `ONGOING`, `LISTED`
+
+The filter buttons sent `status=upcoming` but Spring Boot's
+`Ipo.Status.valueOf("upcoming")` throws `IllegalArgumentException` —
+the GlobalExceptionHandler caught it silently and returned all IPOs.
+
+## Resolution
+Updated all status values in React to uppercase:
+```js
+// Old
+const STATUSES = ['', 'upcoming', 'ongoing', 'listed'];
+
+// New
+const STATUSES = ['', 'UPCOMING', 'ONGOING', 'LISTED'];
+```
+Also updated status comparison in IPOCard:
+```js
+// Old
+if (ipo.status === 'listed')
+
+// New
+if (ipo.status === 'LISTED')
+```
+
+## Interview Questions & Answers
+
+**Q: What is a Java enum and how does `valueOf()` work?**
+> An enum is a fixed set of named constants.
+> `Ipo.Status.valueOf("UPCOMING")` converts string to enum — case sensitive.
+> `valueOf("upcoming")` throws `IllegalArgumentException` — no match found.
+> Always match the exact case of the enum constant.
+
+**Q: How do you make Spring Boot accept case-insensitive enum values?**
+> Create a custom converter:
+> ```java
+> @Component
+> public class StringToStatusConverter implements Converter<String, Ipo.Status> {
+>     public Ipo.Status convert(String s) { return Ipo.Status.valueOf(s.toUpperCase()); }
+> }
+> ```
+> Or handle it in the service layer with `.toUpperCase()` before `valueOf()`.
+
+**Q: Why did the filter return all IPOs instead of throwing an error?**
+> The `GlobalExceptionHandler` caught the `IllegalArgumentException` from
+> `valueOf()` and returned a 400 response. But the frontend wasn't checking
+> for error responses — it just showed whatever came back.
+> Proper frontend error handling would have caught this immediately.
+
+---
+
+# ERROR 16 — npm install warning: `core-js` install scripts not approved
+
+## Error Message
+```
+npm warn allow-scripts 2 packages have install scripts not yet covered by allowScripts:
+npm warn allow-scripts   core-js@3.46.0 (install: (install scripts present))
+npm warn allow-scripts   core-js-pure@3.46.0 (install: (install scripts present))
+```
+
+## When It Happened
+Phase 5 — Running `npm install sockjs-client @stomp/stompjs`
+
+## Why It Happened
+Newer versions of npm require explicit approval before running install scripts
+from packages. This is a security feature — install scripts can execute
+arbitrary code on your machine during `npm install`.
+`core-js` is a polyfill library pulled in by `react-scripts` as a
+transitive dependency. It has an install script that collects usage stats.
+
+## Resolution
+This is just a warning — not an error. The packages installed successfully.
+The warning means `core-js` install scripts did NOT run (which is safer).
+No action needed for development. The app works fine without those scripts running.
+
+If you want to suppress the warning:
+```bash
+npm approve-scripts --allow-scripts-pending
+```
+
+## Interview Questions & Answers
+
+**Q: What is a supply chain attack in npm?**
+> An attacker compromises a popular npm package and adds malicious code.
+> When developers run `npm install`, the malicious install script runs automatically.
+> npm's `allow-scripts` feature prevents unknown install scripts from running.
+> Always review packages before approving their install scripts.
+
+**Q: What is `core-js` and why is it in a React project?**
+> `core-js` is a polyfill library — it adds modern JavaScript features
+> (like `Array.prototype.flat`, `Promise.allSettled`) to older browsers.
+> `react-scripts` includes it automatically to support older browser targets
+> defined in `browserslist` in `package.json`.
+
+**Q: What is the difference between a dependency and a devDependency?**
+> `dependencies` — needed at runtime in production (React, Axios)
+> `devDependencies` — only needed during development/build (testing tools, linters)
+> `sockjs-client` and `@stomp/stompjs` go in `dependencies` — needed at runtime.
+
+---
+
+## Key Lessons Summary (Updated)
+
+| # | Error | Phase | Root Cause | Resolution |
+|---|---|---|---|---|
+| 1 | DaoAuthenticationProvider constructor | 2 | Spring Security 7.x API change | Pass UserDetailsService to constructor |
+| 2 | Flyway silent failure | 2 | Missing spring-boot-starter-flyway | Add both flyway starter and flyway-mysql |
+| 3 | Schema validation crash | 2 | ddl-auto=validate on empty DB | Change to ddl-auto=none |
+| 4 | MySQL connection refused | 2 | MySQL service stopped | net start MySQL80 as Administrator |
+| 5 | MySQL access denied | 2 | Wrong password in properties | Confirm password, update properties |
+| 6 | PowerShell -- flag error | 2 | PowerShell parses -- as operator | Use CMD instead of PowerShell |
+| 7 | 403 on valid token | 3 | Silent JWT exception in filter | Add try-catch in JwtFilter |
+| 8 | VerifyError in SecurityConfig | 3 | Lombok incompatible with Java 25 | Manual constructor in SecurityConfig |
+| 9 | VerifyError in all classes | 3 | Lombok incompatible with Java 25 | Manual constructors in all classes |
+| 10 | N+1 DB queries per request | 3 | No caching in UserDetailsService | @Transactional(readOnly=true) |
+| 11 | 405 Method Not Allowed | 3 | Wrong HTTP method in Postman | Use POST not GET for watchlist |
+| 12 | Password hash in response | 3 | Entity serialized directly | @JsonIgnoreProperties on relationship |
+| 13 | API 404 after migration | 5 | Wrong port and URL style | Fix proxy to 8080, remove trailing slashes |
+| 14 | IPO fields all undefined | 5 | snake_case vs camelCase mismatch | Update all field names to camelCase |
+| 15 | Status filter returning all IPOs | 5 | lowercase vs UPPERCASE enum | Use UPPERCASE status values in React |
+| 16 | npm install scripts warning | 5 | npm security feature for install scripts | Warning only — no action needed |

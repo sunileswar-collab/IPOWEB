@@ -419,8 +419,162 @@ ONGOING  → LISTED   when today > closeDate
 
 ---
 
-# PHASE 5 — (Coming Soon)
-> React Frontend Migration
+# PHASE 5 — React Frontend Migration
+
+## What Was Built
+- `AuthContext.js` — global auth state (token, user, role) using React Context API
+- `api.js` — rewritten for Spring Boot endpoints, JWT interceptor, auto-logout on 401
+- `Navbar.js` — email login/register modals, notification bell with unread badge, user role badge, WebSocket subscription
+- `IPOCard.js` — camelCase fields, risk score badge, watchlist star toggle
+- `HomePage.js` — stats from `/api/ipos/stats`, featured ongoing IPOs
+- `IPOListPage.js` — UPPERCASE status filters matching Spring Boot enums
+- `IPODetailPage.js` — full detail with watchlist toggle, risk score, performance section
+- `WatchlistPage.js` — new: user's watchlisted IPOs
+- `NotificationsPage.js` — new: full notification history with mark-read
+- `App.js` — AuthProvider wrapper, ProtectedRoute, all routes
+
+---
+
+## Key Changes from Django Version
+| Old (Django) | New (Spring Boot) |
+|---|---|
+| `company_name` | `companyName` |
+| `open_date` | `openDate` |
+| `price_band` | `priceBand` |
+| `logo` | `logoUrl` |
+| `rhp_pdf` | `rhpPdfUrl` |
+| `status: 'upcoming'` | `status: 'UPCOMING'` |
+| proxy port 8000 | proxy port 8080 |
+| `/api/ipo/` | `/api/ipos` |
+
+---
+
+## Concepts & Interview Questions
+
+### 1. React Context API
+
+**What it is:** Built-in React state management for sharing data across components without prop drilling.
+
+**Q: What is React Context and when do you use it?**
+> Context provides a way to share values (like auth state) across the component tree
+> without passing props through every level.
+> Use it for global state: auth, theme, language.
+> For complex state with many actions, prefer Redux or Zustand.
+
+**Q: What is the difference between Context and props?**
+> Props = explicit, parent passes to child directly — good for local state.
+> Context = implicit, any component in the tree can consume it — good for global state.
+> Overusing Context causes unnecessary re-renders — only use for truly global data.
+
+**Q: What is `useCallback` and why use it in AuthContext?**
+> `useCallback` memoizes a function so it's not recreated on every render.
+> `login` and `logout` are passed as context values — without `useCallback`,
+> every render creates new function references, causing all consumers to re-render.
+
+---
+
+### 2. Axios Interceptors
+
+**What it is:** Middleware that runs before every request or after every response.
+
+**Our interceptors:**
+```js
+// Request interceptor — attach JWT
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// Response interceptor — auto-logout on 401
+api.interceptors.response.use(
+  res => res,
+  err => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(err);
+  }
+);
+```
+
+**Q: What is an Axios interceptor?**
+> A function that intercepts every request or response globally.
+> Request interceptor = runs before request is sent (attach auth headers).
+> Response interceptor = runs after response received (handle errors globally).
+> Avoids repeating auth header logic in every API call.
+
+**Q: Why use optional chaining `err.response?.status`?**
+> Network errors (no internet, server down) don't have a `response` object.
+> Without `?.`, accessing `.status` on undefined throws a TypeError.
+> Optional chaining safely returns `undefined` instead of crashing.
+
+---
+
+### 3. Protected Routes
+
+**What it is:** A wrapper component that redirects unauthenticated users away from private pages.
+
+```jsx
+const ProtectedRoute = ({ children }) => {
+  const { isLoggedIn } = useAuth();
+  return isLoggedIn ? children : <Navigate to="/" replace />;
+};
+```
+
+**Q: How do you protect routes in React Router v6?**
+> Wrap the route element in a component that checks auth state.
+> If not authenticated, use `<Navigate>` to redirect.
+> `replace` prop replaces history entry so back button doesn't return to protected page.
+
+**Q: What is the difference between `<Navigate>` and `useNavigate()`?**
+> `<Navigate>` is a component — used in JSX for declarative redirects.
+> `useNavigate()` is a hook — used in event handlers for imperative navigation.
+> Use `<Navigate>` in render logic, `useNavigate()` in button click handlers.
+
+---
+
+### 4. WebSocket in React (STOMP + SockJS)
+
+**Connection flow:**
+```js
+const client = new Client({
+  webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
+  connectHeaders: { Authorization: `Bearer ${token}` },
+  onConnect: () => {
+    client.subscribe('/user/queue/notifications', msg => {
+      const n = JSON.parse(msg.body);
+      setUnreadCount(c => c + 1);
+    });
+  },
+});
+client.activate();
+```
+
+**Q: Why use `useRef` for the STOMP client?**
+> `useRef` holds a value that persists across renders without causing re-renders.
+> The STOMP client object doesn't need to trigger UI updates — it's just a connection handle.
+> Storing it in state would cause unnecessary re-renders every time it's set.
+
+**Q: Why return a cleanup function from `useEffect` for WebSocket?**
+> When the component unmounts (user logs out, navigates away), the WebSocket
+> connection must be closed to prevent memory leaks and ghost subscriptions.
+> The cleanup function `return () => client.deactivate()` runs on unmount.
+
+---
+
+## Phase 5 Summary (Say in interview)
+
+> "I migrated the React frontend from Django to Spring Boot by updating all API
+> endpoints, field names from snake_case to camelCase, and status values to uppercase enums.
+> I implemented global auth state using React Context API with JWT stored in localStorage.
+> Axios interceptors automatically attach the JWT to every request and redirect to home
+> on 401 responses. The notification bell uses STOMP over SockJS to receive real-time
+> push notifications from the Spring Boot WebSocket server. Protected routes redirect
+> unauthenticated users away from watchlist and notification pages."
+
+---
 
 ---
 
