@@ -1,112 +1,55 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api';
-
-// Create axios instance
 const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: '/api',
+  headers: { 'Content-Type': 'application/json' },
 });
 
-// Add token to requests if available (only for profile endpoint)
+// Attach JWT to every request if present
 api.interceptors.request.use((config) => {
-  // Only add token for profile endpoint, not for register/login
-  if (config.url && config.url.includes('/auth/profile')) {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  }
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// IPO Service
-export const ipoService = {
-  // Get all IPOs with optional filters
-  getAll: (params = {}) => api.get('/ipo/', { params }),
-  
-  // Get IPO by ID
-  getById: (id) => api.get(`/ipo/${id}/`),
-  
-  // Create new IPO (requires authentication)
-  create: (data) => api.post('/ipo/', data),
-  
-  // Update IPO (requires authentication)
-  update: (id, data) => api.put(`/ipo/${id}/`, data),
-  
-  // Delete IPO (requires authentication)
-  delete: (id) => api.delete(`/ipo/${id}/`),
-  
-  // Search IPOs
-  search: (query) => api.get('/ipo/', { params: { search: query } }),
-  
-  // Filter by status
-  filterByStatus: (status) => api.get('/ipo/', { params: { status } }),
-};
-
-// Authentication Service
-export const authService = {
-  // Register new user
-  register: async (userData) => {
-    const response = await api.post('/auth/register/', userData);
-    return response.data;
-  },
-  
-  // Login user
-  login: async (credentials) => {
-    const response = await api.post('/auth/login/', credentials);
-    return response.data;
-  },
-  
-  // Get user profile
-  getProfile: async () => {
-    const response = await api.get('/auth/profile/');
-    return response.data;
-  },
-  
-  // Refresh token
-  refreshToken: async (refreshToken) => {
-    const response = await api.post('/token/refresh/', { refresh: refreshToken });
-    return response.data;
-  },
-  
-  // Logout
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-  },
-};
-
-// Stats Service
-export const statsService = {
-  // Get IPO statistics
-  getStats: async () => {
-    try {
-      const response = await ipoService.getAll();
-      const data = response.data;
-      
-      let ipos = [];
-      if (Array.isArray(data)) {
-        ipos = data;
-      } else if (data.results) {
-        ipos = data.results;
-      }
-      
-      const stats = {
-        total: ipos.length,
-        upcoming: ipos.filter(ipo => ipo.status === 'upcoming').length,
-        ongoing: ipos.filter(ipo => ipo.status === 'ongoing').length,
-        listed: ipos.filter(ipo => ipo.status === 'listed').length,
-      };
-      
-      return stats;
-    } catch (error) {
-      console.error('Error fetching stats:', error);
-      return { total: 0, upcoming: 0, ongoing: 0, listed: 0 };
+// Auto-logout on 401
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
     }
-  },
+    return Promise.reject(err);
+  }
+);
+
+export const authService = {
+  register: (data) => api.post('/auth/register', data),
+  login: (data) => api.post('/auth/login', data),
+};
+
+export const ipoService = {
+  getAll: (params = {}) => api.get('/ipos', { params }),
+  getById: (id) => api.get(`/ipos/${id}`),
+  getStats: () => api.get('/ipos/stats'),
+  create: (data) => api.post('/ipos', data),
+  update: (id, data) => api.put(`/ipos/${id}`, data),
+  delete: (id) => api.delete(`/ipos/${id}`),
+};
+
+export const watchlistService = {
+  getAll: () => api.get('/watchlist'),
+  add: (ipoId) => api.post(`/watchlist/${ipoId}`),
+  remove: (ipoId) => api.delete(`/watchlist/${ipoId}`),
+  check: (ipoId) => api.get(`/watchlist/${ipoId}/check`),
+};
+
+export const notificationService = {
+  getAll: () => api.get('/notifications'),
+  markRead: (id) => api.put(`/notifications/${id}/read`),
+  getUnreadCount: () => api.get('/notifications/unread-count'),
 };
 
 export default api;
