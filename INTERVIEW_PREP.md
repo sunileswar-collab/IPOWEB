@@ -578,8 +578,155 @@ client.activate();
 
 ---
 
-# PHASE 6 — (Coming Soon)
-> Admin Dashboard, Charts, Analytics
+# PHASE 6 — Admin Dashboard + Charts
+
+## What Was Built
+
+### Backend
+- `IpoRepository` — added `countByRiskScore()` and `findTopPerformersByListingGain()` queries
+- `IpoService` — added `getRiskStats()` and `getTopPerformers()` methods
+- `UserRepository` — added `countByRole()` query
+- `AdminService` — extended `getDashboardStats()` to return users by role, risk distribution, top performers
+
+### Frontend
+- `AdminDashboard.js` — new page with:
+  - 4 stat cards (total users, total IPOs, ongoing, listed)
+  - Pie chart — IPOs by status (Recharts PieChart)
+  - Bar chart — IPOs by risk score (Recharts BarChart)
+  - Bar chart — Users by role (Recharts BarChart)
+  - Top performers table (listing gain, current return)
+  - User management table (change role inline, toggle enable/disable, delete)
+- `App.js` — added `/admin` protected route
+- `Navbar.js` — Dashboard link visible only to ADMIN role
+
+---
+
+## API Changes
+
+`GET /api/admin/stats` now returns:
+```json
+{
+  "totalUsers": 5,
+  "usersByRole": { "ADMIN": 1, "ANALYST": 1, "VIEWER": 3 },
+  "ipoStats": { "UPCOMING": 3, "ONGOING": 2, "LISTED": 5 },
+  "riskStats": { "LOW": 4, "MEDIUM": 3, "HIGH": 3 },
+  "topPerformers": [ { "companyName": "...", "listingGain": 42.5, ... } ]
+}
+```
+
+---
+
+## Concepts & Interview Questions
+
+### 1. Recharts
+
+**What it is:** A composable charting library for React built on D3.
+
+**Q: Why Recharts over Chart.js in a React project?**
+> Recharts is built specifically for React — components are declarative JSX.
+> Chart.js requires imperative DOM manipulation via `useRef` and `useEffect`.
+> Recharts integrates naturally with React state — pass data as props, chart re-renders automatically.
+
+**Q: What is `ResponsiveContainer` in Recharts?**
+> A wrapper that makes charts responsive to their parent container's width.
+> Without it, charts have fixed pixel dimensions and break on mobile.
+> Always wrap charts in `ResponsiveContainer width="100%"`.
+
+**Q: What is the difference between PieChart and BarChart use cases?**
+> PieChart — shows proportions of a whole (IPO status distribution).
+> BarChart — compares values across categories (risk scores, user roles).
+> Use pie for "what percentage", bar for "how many in each category".
+
+---
+
+### 2. JPQL Queries with LIMIT
+
+**Our top performers query:**
+```java
+@Query("SELECT i FROM Ipo i WHERE i.status = 'LISTED' AND i.listingGain IS NOT NULL ORDER BY i.listingGain DESC LIMIT 5")
+List<Ipo> findTopPerformersByListingGain();
+```
+
+**Q: What is JPQL and how is it different from SQL?**
+> JPQL (Java Persistence Query Language) operates on entity objects, not tables.
+> `SELECT i FROM Ipo i` — `Ipo` is the entity class, not the table name.
+> `i.companyName` — Java field name, not column name.
+> Hibernate translates JPQL to SQL for the specific database dialect.
+
+**Q: What is `@Query` annotation in Spring Data JPA?**
+> Allows writing custom JPQL or native SQL queries on repository methods.
+> Use when Spring Data's method name conventions aren't expressive enough.
+> `nativeQuery = true` for raw SQL: `@Query(value = "SELECT * FROM ipos", nativeQuery = true)`
+
+**Q: What is the difference between derived queries and `@Query`?**
+> Derived: `findByStatusAndRiskScore(Status s, RiskScore r)` — Spring generates SQL from method name.
+> `@Query`: explicit JPQL/SQL — use for complex queries, aggregations, joins.
+> Derived queries are readable for simple cases; `@Query` for anything complex.
+
+---
+
+### 3. Role-Based UI Rendering
+
+**What it is:** Showing/hiding UI elements based on the logged-in user's role.
+
+```jsx
+// Only ADMIN sees Dashboard link
+{user?.role === 'ADMIN' && <Nav.Link as={Link} to="/admin">Dashboard</Nav.Link>}
+
+// Route also protected server-side
+@PreAuthorize("hasRole('ADMIN')")
+public ResponseEntity<...> getDashboardStats() { ... }
+```
+
+**Q: Is hiding UI elements enough for security?**
+> No — UI hiding is UX, not security.
+> A user can manually navigate to `/admin` or call `/api/admin/stats` directly.
+> Security must be enforced on the SERVER — `@PreAuthorize` on the backend.
+> Frontend role checks are only for better user experience.
+
+**Q: What is defense in depth?**
+> Applying security at multiple layers — not relying on a single control.
+> In our app:
+> 1. Frontend hides admin UI from non-admins (UX layer)
+> 2. React ProtectedRoute redirects unauthenticated users (client routing layer)
+> 3. Spring Security `@PreAuthorize` rejects unauthorized API calls (server layer)
+> If any one layer fails, the others still protect the system.
+
+---
+
+### 4. Inline Editing Pattern
+
+**What it is:** Editing data directly in a table row without navigating to a separate page.
+
+```jsx
+<Form.Select size="sm" value={u.role}
+  onChange={e => handleRoleChange(u.id, e.target.value)}>
+  <option value="VIEWER">VIEWER</option>
+  <option value="ANALYST">ANALYST</option>
+  <option value="ADMIN">ADMIN</option>
+</Form.Select>
+```
+
+**Q: What is optimistic vs pessimistic UI update?**
+> Optimistic: update UI immediately, then call API. Rollback if API fails.
+> Pessimistic: wait for API response, then update UI.
+> Our dashboard uses pessimistic — `setUsers(prev => ...)` runs after `await api.put()`.
+> Optimistic is faster UX but needs rollback logic on error.
+
+---
+
+## Phase 6 Summary (Say in interview)
+
+> "I built an admin dashboard with three Recharts visualizations — a pie chart
+> for IPO status distribution, a bar chart for risk score breakdown, and a bar chart
+> for user role distribution. The dashboard also shows top performing IPOs by listing gain
+> and a full user management table where admins can change roles inline, toggle
+> account status, and delete users. The backend was extended with three new JPQL
+> queries for risk aggregation, role counting, and top performers.
+> The dashboard route is protected both on the frontend with a role check
+> and on the backend with `@PreAuthorize('hasRole(ADMIN)')`."
+
+---
 
 ---
 

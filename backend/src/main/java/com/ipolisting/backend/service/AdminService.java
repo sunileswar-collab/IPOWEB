@@ -42,8 +42,18 @@ public class AdminService {
 
     public Map<String, Object> getDashboardStats(IpoService ipoService) {
         long totalUsers = userRepository.count();
+        long adminCount = userRepository.countByRole(User.Role.ADMIN);
+        long analystCount = userRepository.countByRole(User.Role.ANALYST);
+        long viewerCount = userRepository.countByRole(User.Role.VIEWER);
         Map<String, Long> ipoStats = ipoService.getStatusStats();
-        return Map.of("totalUsers", totalUsers, "ipoStats", ipoStats);
+        Map<String, Long> riskStats = ipoService.getRiskStats();
+        return Map.of(
+                "totalUsers", totalUsers,
+                "usersByRole", Map.of("ADMIN", adminCount, "ANALYST", analystCount, "VIEWER", viewerCount),
+                "ipoStats", ipoStats,
+                "riskStats", riskStats,
+                "topPerformers", ipoService.getTopPerformers()
+        );
     }
 
     private User findById(Long id) {

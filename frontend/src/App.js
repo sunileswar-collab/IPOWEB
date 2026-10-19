@@ -12,6 +12,7 @@ import IPOListPage from './pages/IPOListPage';
 import IPODetailPage from './pages/IPODetailPage';
 import WatchlistPage from './pages/WatchlistPage';
 import NotificationsPage from './pages/NotificationsPage';
+import AdminDashboard from './pages/AdminDashboard';
 
 const ProtectedRoute = ({ children }) => {
   const { isLoggedIn } = useAuth();
@@ -29,6 +30,7 @@ function AppRoutes() {
           <Route path="/ipo/:id" element={<IPODetailPage />} />
           <Route path="/watchlist" element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

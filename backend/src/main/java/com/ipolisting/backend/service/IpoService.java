@@ -60,6 +60,19 @@ public class IpoService {
                 ));
     }
 
+    public Map<String, Long> getRiskStats() {
+        return ipoRepository.countByRiskScore().stream()
+                .collect(Collectors.toMap(
+                        row -> row[0].toString(),
+                        row -> (Long) row[1]
+                ));
+    }
+
+    public List<IpoDTO.Response> getTopPerformers() {
+        return ipoRepository.findTopPerformersByListingGain()
+                .stream().map(IpoDTO.Response::from).collect(Collectors.toList());
+    }
+
     private Ipo findById(Long id) {
         return ipoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("IPO not found with id: " + id));

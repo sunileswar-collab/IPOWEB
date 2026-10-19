@@ -969,3 +969,124 @@ npm approve-scripts --allow-scripts-pending
 | 14 | IPO fields all undefined | 5 | snake_case vs camelCase mismatch | Update all field names to camelCase |
 | 15 | Status filter returning all IPOs | 5 | lowercase vs UPPERCASE enum | Use UPPERCASE status values in React |
 | 16 | npm install scripts warning | 5 | npm security feature for install scripts | Warning only — no action needed |
+
+---
+
+# PHASE 6 ERRORS
+
+---
+
+# ERROR 17 — JPQL LIMIT keyword not supported in older Hibernate
+
+## Error Message
+```
+org.hibernate.query.SemanticException: LIMIT clause not supported in JPQL
+```
+
+## When It Happened
+Phase 6 — Adding top performers query to IpoRepository
+
+## Why It Happened
+Standard JPQL does not support `LIMIT` — it is SQL syntax.
+Older Hibernate versions reject it in `@Query` JPQL strings.
+Hibernate 6.x (used in Spring Boot 4.x) added JPQL LIMIT support,
+but it may still fail depending on dialect configuration.
+
+## Resolution
+Two options:
+
+Option 1 — Use native SQL query:
+```java
+@Query(value = "SELECT * FROM ipos WHERE status = 'LISTED' AND listing_gain IS NOT NULL ORDER BY listing_gain DESC LIMIT 5", nativeQuery = true)
+List<Ipo> findTopPerformersByListingGain();
+```
+
+Option 2 — Use Spring Data Pageable (cleanest):
+```java
+List<Ipo> findByStatusAndListingGainIsNotNullOrderByListingGainDesc(Ipo.Status status, Pageable pageable);
+// Call with: PageRequest.of(0, 5)
+```
+
+Hibernate 6.x with Spring Boot 4.x supports JPQL LIMIT — no change needed if on latest versions.
+
+## Interview Questions & Answers
+
+**Q: What is the difference between JPQL and native SQL in Spring Data JPA?**
+> JPQL operates on entity objects — database-agnostic, portable across MySQL/PostgreSQL/H2.
+> Native SQL operates on tables directly — database-specific, more powerful but less portable.
+> Use JPQL by default. Use native SQL only when JPQL can't express the query.
+
+**Q: What is `Pageable` in Spring Data JPA?**
+> An interface for pagination and sorting parameters.
+> `PageRequest.of(0, 5)` = page 0, 5 items per page.
+> Pass as method parameter — Spring Data automatically adds LIMIT/OFFSET to the query.
+> Cleaner than hardcoding LIMIT in queries.
+
+**Q: What is the difference between `Page` and `List` return types in Spring Data?**
+> `List<T>` — returns just the data, no pagination metadata.
+> `Page<T>` — returns data + total count + total pages + current page info.
+> Use `Page` when frontend needs pagination controls. Use `List` for simple queries.
+
+---
+
+# ERROR 18 — Admin dashboard shows blank charts (empty stats response)
+
+## Error Message
+```
+No error — but all charts were empty / showed "No data"
+Network tab showed: GET /api/admin/stats returned 200 with empty maps
+```
+
+## When It Happened
+Phase 6 — First load of admin dashboard after backend changes
+
+## Why It Happened
+The database had no IPO data yet — `ipoStats`, `riskStats` returned empty maps `{}`.
+The frontend `Object.entries({})` returns `[]` — Recharts renders nothing.
+Also `topPerformers` was empty because no IPOs had `status = LISTED`.
+
+## Resolution
+Two fixes:
+1. Added null/empty guards in frontend:
+```js
+const pieData = Object.entries(ipoStats).map(([name, value]) => ({ name, value }));
+// Render: {pieData.length === 0 ? <p>No data</p> : <PieChart .../>}
+```
+2. Added sample IPO data via Postman to populate the dashboard.
+
+## Interview Questions & Answers
+
+**Q: How do you handle empty states in a dashboard UI?**
+> Always check for empty data before rendering charts.
+> Show a meaningful empty state message instead of a broken/blank chart.
+> This is called "graceful degradation" — the UI degrades gracefully when data is missing.
+
+**Q: What is defensive programming in frontend code?**
+> Writing code that handles unexpected inputs without crashing.
+> Examples: `stats?.ipoStats || {}`, `ipo.listingGain ?? 'N/A'`, optional chaining `?.`.
+> Prevents "Cannot read property of undefined" errors when API returns unexpected shapes.
+
+---
+
+## Key Lessons Summary (Updated)
+
+| # | Error | Phase | Root Cause | Resolution |
+|---|---|---|---|---|
+| 1 | DaoAuthenticationProvider constructor | 2 | Spring Security 7.x API change | Pass UserDetailsService to constructor |
+| 2 | Flyway silent failure | 2 | Missing spring-boot-starter-flyway | Add both flyway starter and flyway-mysql |
+| 3 | Schema validation crash | 2 | ddl-auto=validate on empty DB | Change to ddl-auto=none |
+| 4 | MySQL connection refused | 2 | MySQL service stopped | net start MySQL80 as Administrator |
+| 5 | MySQL access denied | 2 | Wrong password in properties | Confirm password, update properties |
+| 6 | PowerShell -- flag error | 2 | PowerShell parses -- as operator | Use CMD instead of PowerShell |
+| 7 | 403 on valid token | 3 | Silent JWT exception in filter | Add try-catch in JwtFilter |
+| 8 | VerifyError in SecurityConfig | 3 | Lombok incompatible with Java 25 | Manual constructor in SecurityConfig |
+| 9 | VerifyError in all classes | 3 | Lombok incompatible with Java 25 | Manual constructors in all classes |
+| 10 | N+1 DB queries per request | 3 | No caching in UserDetailsService | @Transactional(readOnly=true) |
+| 11 | 405 Method Not Allowed | 3 | Wrong HTTP method in Postman | Use POST not GET for watchlist |
+| 12 | Password hash in response | 3 | Entity serialized directly | @JsonIgnoreProperties on relationship |
+| 13 | API 404 after migration | 5 | Wrong port and URL style | Fix proxy to 8080, remove trailing slashes |
+| 14 | IPO fields all undefined | 5 | snake_case vs camelCase mismatch | Update all field names to camelCase |
+| 15 | Status filter returning all IPOs | 5 | lowercase vs UPPERCASE enum | Use UPPERCASE status values in React |
+| 16 | npm install scripts warning | 5 | npm security feature for install scripts | Warning only — no action needed |
+| 17 | JPQL LIMIT not supported | 6 | LIMIT is SQL syntax not JPQL | Use nativeQuery=true or Pageable |
+| 18 | Admin charts blank | 6 | Empty DB / no null guards in frontend | Add empty state checks + seed data |

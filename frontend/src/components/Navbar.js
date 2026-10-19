@@ -95,6 +95,7 @@ const Navbar = () => {
               <Nav.Link as={Link} to="/">Home</Nav.Link>
               <Nav.Link as={Link} to="/ipos">All IPOs</Nav.Link>
               {isLoggedIn && <Nav.Link as={Link} to="/watchlist">Watchlist</Nav.Link>}
+              {user?.role === 'ADMIN' && <Nav.Link as={Link} to="/admin">Dashboard</Nav.Link>}
             </Nav>
 
             <div className="d-flex align-items-center gap-2">
